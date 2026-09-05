@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           xcodebuild \
             -project VoidLink.xcodeproj \
-            -target VoidLink \
+            -scheme VoidLink \
             -sdk iphoneos \
             -configuration Release \
             -archivePath "$PWD/build/VoidLink.xcarchive" \
