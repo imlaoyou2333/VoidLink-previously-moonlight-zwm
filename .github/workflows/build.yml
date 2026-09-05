@@ -2,7 +2,16 @@ name: Build VoidLink IPA
 
 on:
   push:
-    branches: [ "feat/frame_pacing_metal" ]
+    branches: [ "Integration" ]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (leave empty to generate one automatically)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -11,20 +20,46 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Checkout submodules
         run: "git submodule update --init --recursive"
 
       - name: Build VoidLink
         run: |
-          xcodebuild -verbose -scheme VoidLink -sdk iphoneos -configuration Debug archive -archivePath $PWD/build/VoidLink.xcarchive CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED="NO" CODE_SIGN_ENTITLEMENTS="" CODE_SIGNING_ALLOWED="NO"
-          mkdir -p ./build/IPA && mkdir -p ./build/IPA/Payload
-          cp -r ./build/VoidLink.xcarchive/Products/Applications/VoidLink.app ./build/IPA/Payload/VoidLink.app
-          cd ./build/IPA && zip -r ../../build/VoidLink.ipa ./Payload/* && cd ../..
+          set -euo pipefail
+          xcodebuild \
+            -project VoidLink.xcodeproj \
+            -target VoidLink \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath "$PWD/build/VoidLink.xcarchive" \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+          mkdir -p build/IPA/Payload
+          cp -R build/VoidLink.xcarchive/Products/Applications/VoidLink.app build/IPA/Payload/
+          (cd build/IPA && zip -qry ../VoidLink.ipa Payload)
+          unzip -l build/VoidLink.ipa | grep -q "Payload/VoidLink.app/"
 
       - name: Upload VoidLink IPA to Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: VoidLink.ipa
           path: build/VoidLink.ipa
+
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          release_tag="${RELEASE_TAG_INPUT:-v0.0.1-build.${GITHUB_RUN_NUMBER}}"
+          gh release create "$release_tag" \
+            --target "$GITHUB_SHA" \
+            --title "VoidLink $release_tag" \
+            --generate-notes \
+            build/VoidLink.ipa
